@@ -1,0 +1,36 @@
+[project]
+name = "voice-typer"
+version = "0.1.0"
+description = "macOS push-to-talk speech-to-text tool using MLX Whisper"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mlx-whisper>=0.4.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "pynput>=1.7.6",
+    "pyobjc-framework-Quartz>=10.0",
+    "rumps>=0.4.0",
+    "tomli>=2.0.0",
+]
+
+[project.scripts]
+voice-typer = "voice_typer.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_typer"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
