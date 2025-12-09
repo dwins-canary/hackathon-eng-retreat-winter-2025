@@ -11,6 +11,17 @@ from typing import NoReturn
 from voice_typer.audio import AudioRecorder
 from voice_typer.config import AVAILABLE_MODELS, Config, DEFAULT_CONFIG_PATH, DEFAULT_MODEL
 from voice_typer.hotkey import KEY_MAP, HotkeyListener
+from voice_typer.model_manager import (
+    BackgroundDownloader,
+    get_all_models_status,
+    is_model_downloaded,
+    ModelState,
+)
+from voice_typer.permissions import (
+    get_permission_status,
+    open_accessibility_settings,
+    open_input_monitoring_settings,
+)
 from voice_typer.statusbar import show_model_selection_dialog, StatusBar
 from voice_typer.transcribe import download_model, Transcriber
 from voice_typer.typer import type_text
@@ -185,6 +196,18 @@ def main() -> NoReturn:
     if config.verbose:
         print(f"Configuration: {config}")
 
+    # Check permissions at startup (non-blocking)
+    permission_status = get_permission_status()
+    if not permission_status.all_granted:
+        print("Warning: Some permissions are missing. App will start but may not function fully.")
+        if not permission_status.accessibility:
+            print("  - Accessibility permission required for typing text")
+        if not permission_status.input_monitoring:
+            print("  - Input Monitoring permission required for hotkey detection")
+
+    # Get initial model status
+    models_status = get_all_models_status()
+
     # Initialize components
     print(f"Using model: {config.model}")
     transcriber = Transcriber(model=config.model, language=config.language)
@@ -192,8 +215,13 @@ def main() -> NoReturn:
     recorder = AudioRecorder(sample_rate=config.sample_rate)
     status_bar: StatusBar | None = None
 
+    # Track pending model switch (when download completes)
+    pending_model_switch: str | None = None
+
     def cleanup() -> None:
         """Clean up resources."""
+        nonlocal downloader
+        downloader.cancel()
         listener.stop()
         recorder.close()
         if status_bar:
@@ -205,21 +233,9 @@ def main() -> NoReturn:
         cleanup()
         sys.exit(0)
 
-    def on_model_select(model_id: str) -> None:
-        """Handle model selection from status bar menu."""
+    def switch_to_model(model_id: str) -> None:
+        """Switch to a model that is already downloaded."""
         nonlocal config, transcriber
-
-        if model_id == config.model:
-            return  # Same model, nothing to do
-
-        print(f"Switching to model: {model_id}")
-
-        # Download the model (will be fast if already cached)
-        try:
-            download_model(model_id)
-        except Exception as e:
-            print(f"Error downloading model: {e}")
-            return
 
         # Update config and save
         config = config.override(model=model_id)
@@ -228,6 +244,65 @@ def main() -> NoReturn:
         # Create new transcriber with new model
         transcriber = Transcriber(model=model_id, language=config.language)
         print(f"Now using model: {model_id}")
+
+        # Update model status in menu to reflect current model
+        if status_bar:
+            status_bar.update_model_status(get_all_models_status())
+
+    def on_download_complete(model_id: str, success: bool) -> None:
+        """Handle download completion."""
+        nonlocal pending_model_switch, models_status
+
+        if success:
+            print(f"Model {model_id} downloaded successfully")
+
+            # Update model status
+            models_status = get_all_models_status()
+            if status_bar:
+                status_bar.update_model_status(models_status)
+
+            # If this was the pending model switch, do it now
+            if pending_model_switch == model_id:
+                pending_model_switch = None
+                switch_to_model(model_id)
+        else:
+            print(f"Failed to download model {model_id}")
+            # Update status to show error
+            models_status = get_all_models_status()
+            if status_bar:
+                status_bar.update_model_status(models_status)
+
+        pending_model_switch = None
+
+    def on_download_progress(model_id: str, progress: float) -> None:
+        """Handle download progress updates."""
+        if status_bar:
+            status_bar.update_download_progress(model_id, progress)
+
+    # Create background downloader
+    downloader = BackgroundDownloader(
+        on_progress=on_download_progress,
+        on_complete=on_download_complete,
+    )
+
+    def on_model_select(model_id: str) -> None:
+        """Handle model selection from status bar menu."""
+        nonlocal pending_model_switch
+
+        if model_id == config.model:
+            return  # Same model, nothing to do
+
+        print(f"Switching to model: {model_id}")
+
+        # Check if model is already downloaded
+        if is_model_downloaded(model_id):
+            # Model ready - switch immediately
+            switch_to_model(model_id)
+        else:
+            # Need to download first - start background download
+            print(f"Model not downloaded. Starting download...")
+            pending_model_switch = model_id
+            downloader.download(model_id)
 
     # Recording state
     is_recording = False
@@ -325,6 +400,10 @@ def main() -> NoReturn:
             on_quit=on_quit,
             on_model_select=on_model_select,
             current_model=config.model,
+            permission_status=permission_status,
+            models_status=models_status,
+            on_open_accessibility=open_accessibility_settings,
+            on_open_input_monitoring=open_input_monitoring_settings,
         )
         status_bar.start()
         # This blocks until the app quits

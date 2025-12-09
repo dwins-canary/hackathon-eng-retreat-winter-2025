@@ -8,6 +8,8 @@ if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
 
+from voice_typer.config import MODEL_CACHE_DIR
+
 
 def get_model_path(model_id: str) -> str:
     """Get the local path for a model, downloading if needed.
@@ -18,56 +20,16 @@ def get_model_path(model_id: str) -> str:
     Returns:
         Local filesystem path to the model directory.
     """
-    import os
-    from pathlib import Path
     from huggingface_hub import snapshot_download
 
-    # Use a non-hidden directory for the cache to avoid MLX path issues
-    cache_dir = Path.home() / "Library" / "Caches" / "voice-typer" / "models"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    # Use the shared cache directory
+    MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Download to the non-hidden cache directory
+    # Download to the cache directory
     local_path = snapshot_download(
         repo_id=model_id,
-        local_dir=str(cache_dir / model_id.replace("/", "--")),
+        local_dir=str(MODEL_CACHE_DIR / model_id.replace("/", "--")),
     )
-
-    print(f"Model path: {local_path}")
-
-    # Test loading the model directly with mlx.core
-    weights_path = os.path.join(local_path, "weights.npz")
-    print(f"Weights path: {weights_path}")
-    print(f"Weights exists: {os.path.exists(weights_path)}")
-
-    try:
-        import mlx.core as mx
-        from pathlib import Path
-        print(f"Attempting mx.load...")
-        weights = mx.load(weights_path)
-        print(f"mx.load SUCCESS! Keys: {list(weights.keys())[:2]}")
-
-        # Test how pathlib converts the path
-        path_obj = Path(local_path) / "weights.npz"
-        path_str = str(path_obj)
-        print(f"Path object: {path_obj}")
-        print(f"Path str: {path_str}")
-        print(f"Direct path: {weights_path}")
-        print(f"Paths equal: {path_str == weights_path}")
-
-        # Test load with pathlib path
-        print(f"Testing mx.load with pathlib str...")
-        weights2 = mx.load(path_str)
-        print(f"mx.load with pathlib str SUCCESS!")
-
-        # Test mlx_whisper.load_models.load_model directly
-        print(f"Testing load_model directly...")
-        from mlx_whisper.load_models import load_model
-        model = load_model(local_path)
-        print(f"load_model SUCCESS!")
-    except Exception as e:
-        import traceback
-        print(f"FAILED: {e}")
-        traceback.print_exc()
 
     return local_path
 

@@ -74,7 +74,7 @@ def type_text_fast(text: str) -> None:
     for i in range(0, len(text), chunk_size):
         chunk = text[i : i + chunk_size]
         _type_string_chunk(chunk)
-        time.sleep(0.02)  # Small delay between chunks
+        time.sleep(0.01)  # Small delay between chunks
 
 
 def _type_string_chunk(text: str) -> None:

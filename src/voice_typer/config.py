@@ -16,6 +16,9 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "voice-typer" / "config.toml"
 DEFAULT_HOTKEY = "alt_r"
 DEFAULT_MODEL = "mlx-community/whisper-turbo"
 
+# Cache directory for downloaded models
+MODEL_CACHE_DIR = Path.home() / "Library" / "Caches" / "voice-typer" / "models"
+
 # Available models for first-run selection
 AVAILABLE_MODELS = [
     ("mlx-community/whisper-tiny", "Whisper Tiny - Fastest, lower accuracy (~75MB)"),
