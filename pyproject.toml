@@ -14,6 +14,9 @@ dependencies = [
     "tomli>=2.0.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0.0"]
+
 [project.scripts]
 voice-typer = "voice_typer.main:main"
 

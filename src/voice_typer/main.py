@@ -9,11 +9,20 @@ import threading
 from typing import NoReturn
 
 from voice_typer.audio import AudioRecorder
-from voice_typer.config import Config
+from voice_typer.config import AVAILABLE_MODELS, Config, DEFAULT_CONFIG_PATH, DEFAULT_MODEL
 from voice_typer.hotkey import KEY_MAP, HotkeyListener
-from voice_typer.statusbar import StatusBar
-from voice_typer.transcribe import Transcriber
+from voice_typer.statusbar import show_model_selection_dialog, StatusBar
+from voice_typer.transcribe import download_model, Transcriber
 from voice_typer.typer import type_text
+
+
+def is_running_in_terminal() -> bool:
+    """Check if running in a terminal with stdin available."""
+    import sys
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,12 +72,110 @@ Available hotkeys: {', '.join(sorted(KEY_MAP.keys()))}
     return parser.parse_args()
 
 
+def first_run_setup_terminal() -> Config:
+    """Run first-time setup in terminal mode.
+
+    Returns:
+        Config instance with selected model.
+    """
+    print("=" * 50)
+    print("Welcome to Voice Typer!")
+    print("=" * 50)
+    print()
+    print("First, let's download a speech recognition model.")
+    print("Choose a model based on your needs:")
+    print()
+
+    # Display available models
+    for i, (model_id, description) in enumerate(AVAILABLE_MODELS, 1):
+        print(f"  {i}. {description}")
+    print()
+
+    # Get user selection
+    while True:
+        try:
+            choice = input(f"Enter your choice (1-{len(AVAILABLE_MODELS)}): ").strip()
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(AVAILABLE_MODELS):
+                break
+            print(f"Please enter a number between 1 and {len(AVAILABLE_MODELS)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except (KeyboardInterrupt, EOFError):
+            print("\nSetup cancelled.")
+            sys.exit(0)
+
+    selected_model, _ = AVAILABLE_MODELS[choice_num - 1]
+    return _download_and_save_model(selected_model)
+
+
+def first_run_setup_gui() -> Config:
+    """Run first-time setup with GUI dialog.
+
+    Returns:
+        Config instance with selected model.
+    """
+    selected_model = show_model_selection_dialog()
+
+    if selected_model is None:
+        # User cancelled - use default
+        selected_model = DEFAULT_MODEL
+
+    return _download_and_save_model(selected_model)
+
+
+def _download_and_save_model(model_id: str) -> Config:
+    """Download model and save config.
+
+    Args:
+        model_id: Model ID to download.
+
+    Returns:
+        Config instance with selected model.
+    """
+    print(f"Selected model: {model_id}")
+
+    # Download the model
+    try:
+        download_model(model_id)
+    except KeyboardInterrupt:
+        print("\nDownload interrupted. Run voice-typer again to resume.")
+        sys.exit(0)
+
+    # Create and save config
+    config = Config(model=model_id)
+    config.save()
+    print(f"Configuration saved to {DEFAULT_CONFIG_PATH}")
+
+    return config
+
+
+def first_run_setup() -> Config:
+    """Run first-time setup: model selection and download.
+
+    Uses GUI dialog when not running in terminal, otherwise uses terminal input.
+
+    Returns:
+        Config instance with selected model.
+    """
+    if is_running_in_terminal():
+        return first_run_setup_terminal()
+    else:
+        return first_run_setup_gui()
+
+
 def main() -> NoReturn:
     """Main entry point."""
     args = parse_args()
 
-    # Load config and apply CLI overrides
-    config = Config.load().override(
+    # Check for first run (no config file exists)
+    if not DEFAULT_CONFIG_PATH.exists():
+        config = first_run_setup()
+    else:
+        config = Config.load()
+
+    # Apply CLI overrides
+    config = config.override(
         hotkey=args.hotkey,
         model=args.model,
         language=args.language,
@@ -79,8 +186,7 @@ def main() -> NoReturn:
         print(f"Configuration: {config}")
 
     # Initialize components
-    print(f"Loading model: {config.model}")
-    print("(First run will download the model, ~3GB)")
+    print(f"Using model: {config.model}")
     transcriber = Transcriber(model=config.model, language=config.language)
 
     recorder = AudioRecorder(sample_rate=config.sample_rate)
@@ -98,6 +204,30 @@ def main() -> NoReturn:
         """Handle quit from status bar."""
         cleanup()
         sys.exit(0)
+
+    def on_model_select(model_id: str) -> None:
+        """Handle model selection from status bar menu."""
+        nonlocal config, transcriber
+
+        if model_id == config.model:
+            return  # Same model, nothing to do
+
+        print(f"Switching to model: {model_id}")
+
+        # Download the model (will be fast if already cached)
+        try:
+            download_model(model_id)
+        except Exception as e:
+            print(f"Error downloading model: {e}")
+            return
+
+        # Update config and save
+        config = config.override(model=model_id)
+        config.save()
+
+        # Create new transcriber with new model
+        transcriber = Transcriber(model=model_id, language=config.language)
+        print(f"Now using model: {model_id}")
 
     # Recording state
     is_recording = False
@@ -191,7 +321,11 @@ def main() -> NoReturn:
 
     # Start status bar if enabled (must run on main thread for macOS)
     if not args.no_statusbar:
-        status_bar = StatusBar(on_quit=on_quit)
+        status_bar = StatusBar(
+            on_quit=on_quit,
+            on_model_select=on_model_select,
+            current_model=config.model,
+        )
         status_bar.start()
         # This blocks until the app quits
         status_bar.run()
@@ -208,4 +342,7 @@ def main() -> NoReturn:
 
 
 if __name__ == "__main__":
+    # Required for PyInstaller multiprocessing support on macOS
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

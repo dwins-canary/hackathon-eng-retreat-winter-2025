@@ -14,6 +14,7 @@ from Quartz import (
 )
 
 
+
 def type_text(text: str, delay: float = 0.01) -> None:
     """Type text at the current cursor position using CGEvents.
 
@@ -25,6 +26,7 @@ def type_text(text: str, delay: float = 0.01) -> None:
         delay: Delay between characters (seconds). Small delay helps
                ensure characters aren't dropped.
     """
+    print(f"Typing text: {text}")
     if not text:
         return
 
@@ -43,7 +45,6 @@ def _type_character(char: str) -> None:
     # Create a key down event (keycode 0 is placeholder, we set unicode directly)
     key_down = CGEventCreateKeyboardEvent(None, 0, True)
     key_up = CGEventCreateKeyboardEvent(None, 0, False)
-
     if key_down is None or key_up is None:
         raise RuntimeError("Failed to create keyboard event")
 
