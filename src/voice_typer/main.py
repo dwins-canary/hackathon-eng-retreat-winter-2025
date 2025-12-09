@@ -123,6 +123,9 @@ def first_run_setup_terminal() -> Config:
 def first_run_setup_gui() -> Config:
     """Run first-time setup with GUI dialog.
 
+    For GUI mode, we just save the config without downloading.
+    The download will happen in the background after the status bar starts.
+
     Returns:
         Config instance with selected model.
     """
@@ -132,11 +135,31 @@ def first_run_setup_gui() -> Config:
         # User cancelled - use default
         selected_model = DEFAULT_MODEL
 
-    return _download_and_save_model(selected_model)
+    # Just save config - download will happen via background downloader
+    return _save_model_config(selected_model)
+
+
+def _save_model_config(model_id: str) -> Config:
+    """Save model config without downloading.
+
+    Args:
+        model_id: Model ID to save.
+
+    Returns:
+        Config instance with selected model.
+    """
+    print(f"Selected model: {model_id}")
+
+    # Create and save config (download will happen later)
+    config = Config(model=model_id)
+    config.save()
+    print(f"Configuration saved to {DEFAULT_CONFIG_PATH}")
+
+    return config
 
 
 def _download_and_save_model(model_id: str) -> Config:
-    """Download model and save config.
+    """Download model and save config (for terminal mode).
 
     Args:
         model_id: Model ID to download.
@@ -406,6 +429,13 @@ def main() -> NoReturn:
             on_open_input_monitoring=open_input_monitoring_settings,
         )
         status_bar.start()
+
+        # Auto-download selected model if not already downloaded
+        if not is_model_downloaded(config.model):
+            print(f"Model {config.model} not downloaded. Starting background download...")
+            pending_model_switch = config.model
+            downloader.download(config.model)
+
         # This blocks until the app quits
         status_bar.run()
     else:

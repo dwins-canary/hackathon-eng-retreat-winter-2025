@@ -19,7 +19,7 @@ else
 fi
 
 # Ensure PyInstaller is installed
-pip install pyinstaller -q
+uv add pyinstaller -q
 
 # Build the app using the spec file
 pyinstaller "Voice Typer.spec" --noconfirm
