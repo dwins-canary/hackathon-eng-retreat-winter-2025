@@ -9,27 +9,27 @@ import threading
 from typing import NoReturn
 
 from voice_typer.audio import AudioRecorder
-from voice_typer.config import AVAILABLE_MODELS, Config, DEFAULT_CONFIG_PATH, DEFAULT_MODEL
+from voice_typer.config import AVAILABLE_MODELS, DEFAULT_CONFIG_PATH, DEFAULT_MODEL, Config
 from voice_typer.hotkey import KEY_MAP, HotkeyListener
 from voice_typer.model_manager import (
     BackgroundDownloader,
     get_all_models_status,
     is_model_downloaded,
-    ModelState,
 )
 from voice_typer.permissions import (
     get_permission_status,
     open_accessibility_settings,
     open_input_monitoring_settings,
 )
-from voice_typer.statusbar import show_model_selection_dialog, StatusBar
-from voice_typer.transcribe import download_model, Transcriber
+from voice_typer.statusbar import StatusBar, show_model_selection_dialog
+from voice_typer.transcribe import Transcriber, download_model
 from voice_typer.typer import type_text
 
 
 def is_running_in_terminal() -> bool:
     """Check if running in a terminal with stdin available."""
     import sys
+
     try:
         return sys.stdin.isatty()
     except Exception:
@@ -48,7 +48,7 @@ Examples:
   voice-typer --hotkey alt_r     # Use Right Option key
   voice-typer --model mlx-community/whisper-large-v3
 
-Available hotkeys: {', '.join(sorted(KEY_MAP.keys()))}
+Available hotkeys: {", ".join(sorted(KEY_MAP.keys()))}
 """,
     )
     parser.add_argument(
@@ -323,7 +323,7 @@ def main() -> NoReturn:
             switch_to_model(model_id)
         else:
             # Need to download first - start background download
-            print(f"Model not downloaded. Starting download...")
+            print("Model not downloaded. Starting download...")
             pending_model_switch = model_id
             downloader.download(model_id)
 
@@ -453,5 +453,6 @@ def main() -> NoReturn:
 if __name__ == "__main__":
     # Required for PyInstaller multiprocessing support on macOS
     import multiprocessing
+
     multiprocessing.freeze_support()
     main()

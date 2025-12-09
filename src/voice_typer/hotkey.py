@@ -58,8 +58,7 @@ def parse_hotkey(hotkey_str: str) -> Any:
         return keyboard.KeyCode.from_char(key_lower)
 
     raise ValueError(
-        f"Unknown hotkey: {hotkey_str}. "
-        f"Valid options: {', '.join(sorted(KEY_MAP.keys()))}"
+        f"Unknown hotkey: {hotkey_str}. Valid options: {', '.join(sorted(KEY_MAP.keys()))}"
     )
 
 

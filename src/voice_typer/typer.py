@@ -8,11 +8,8 @@ from Quartz import (
     CGEventCreateKeyboardEvent,
     CGEventKeyboardSetUnicodeString,
     CGEventPost,
-    kCGEventKeyDown,
-    kCGEventKeyUp,
     kCGHIDEventTap,
 )
-
 
 
 def type_text(text: str, delay: float = 0.01) -> None:

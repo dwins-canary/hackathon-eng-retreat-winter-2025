@@ -21,7 +21,15 @@ OPTIONS = {
         "NSAccessibilityUsageDescription": "Voice Typer needs Accessibility access to type text into other applications.",
         "LSUIElement": True,  # Menu bar app (no dock icon)
     },
-    "packages": ["mlx", "mlx_whisper", "sounddevice", "numpy", "pynput", "rumps", "huggingface_hub"],
+    "packages": [
+        "mlx",
+        "mlx_whisper",
+        "sounddevice",
+        "numpy",
+        "pynput",
+        "rumps",
+        "huggingface_hub",
+    ],
     "includes": ["voice_typer"],
     "excludes": ["tkinter", "_tkinter", "Tkinter"],
 }
