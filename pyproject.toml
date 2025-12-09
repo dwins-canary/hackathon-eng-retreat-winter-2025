@@ -12,7 +12,11 @@ dependencies = [
     "pyobjc-framework-Quartz>=10.0",
     "rumps>=0.4.0",
     "tomli>=2.0.0",
+    "pyinstaller>=6.17.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0.0"]
 
 [project.scripts]
 voice-typer = "voice_typer.main:main"

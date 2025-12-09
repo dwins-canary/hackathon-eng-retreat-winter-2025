@@ -1,2 +1,12 @@
 .devbox
 .venv
+
+# py2app build artifacts
+build/
+dist/
+*.egg-info/
+create/
+__pycache__/
+*.pyc
+
+.DS_Store

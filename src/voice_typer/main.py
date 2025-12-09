@@ -9,11 +9,32 @@ import threading
 from typing import NoReturn
 
 from voice_typer.audio import AudioRecorder
-from voice_typer.config import Config
+from voice_typer.config import AVAILABLE_MODELS, DEFAULT_CONFIG_PATH, DEFAULT_MODEL, Config
 from voice_typer.hotkey import KEY_MAP, HotkeyListener
-from voice_typer.statusbar import StatusBar
-from voice_typer.transcribe import Transcriber
+from voice_typer.model_manager import (
+    BackgroundDownloader,
+    get_all_models_status,
+    is_model_downloaded,
+)
+from voice_typer.permissions import (
+    get_permission_status,
+    open_accessibility_settings,
+    open_input_monitoring_settings,
+    open_microphone_settings,
+)
+from voice_typer.statusbar import StatusBar, show_model_selection_dialog
+from voice_typer.transcribe import Transcriber, download_model
 from voice_typer.typer import type_text
+
+
+def is_running_in_terminal() -> bool:
+    """Check if running in a terminal with stdin available."""
+    import sys
+
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,7 +49,7 @@ Examples:
   voice-typer --hotkey alt_r     # Use Right Option key
   voice-typer --model mlx-community/whisper-large-v3
 
-Available hotkeys: {', '.join(sorted(KEY_MAP.keys()))}
+Available hotkeys: {", ".join(sorted(KEY_MAP.keys()))}
 """,
     )
     parser.add_argument(
@@ -63,12 +84,133 @@ Available hotkeys: {', '.join(sorted(KEY_MAP.keys()))}
     return parser.parse_args()
 
 
+def first_run_setup_terminal() -> Config:
+    """Run first-time setup in terminal mode.
+
+    Returns:
+        Config instance with selected model.
+    """
+    print("=" * 50)
+    print("Welcome to Voice Typer!")
+    print("=" * 50)
+    print()
+    print("First, let's download a speech recognition model.")
+    print("Choose a model based on your needs:")
+    print()
+
+    # Display available models
+    for i, (model_id, description) in enumerate(AVAILABLE_MODELS, 1):
+        print(f"  {i}. {description}")
+    print()
+
+    # Get user selection
+    while True:
+        try:
+            choice = input(f"Enter your choice (1-{len(AVAILABLE_MODELS)}): ").strip()
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(AVAILABLE_MODELS):
+                break
+            print(f"Please enter a number between 1 and {len(AVAILABLE_MODELS)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except (KeyboardInterrupt, EOFError):
+            print("\nSetup cancelled.")
+            sys.exit(0)
+
+    selected_model, _ = AVAILABLE_MODELS[choice_num - 1]
+    return _download_and_save_model(selected_model)
+
+
+def first_run_setup_gui() -> Config:
+    """Run first-time setup with GUI dialog.
+
+    For GUI mode, we just save the config without downloading.
+    The download will happen in the background after the status bar starts.
+
+    Returns:
+        Config instance with selected model.
+    """
+    selected_model = show_model_selection_dialog()
+
+    if selected_model is None:
+        # User cancelled - use default
+        selected_model = DEFAULT_MODEL
+
+    # Just save config - download will happen via background downloader
+    return _save_model_config(selected_model)
+
+
+def _save_model_config(model_id: str) -> Config:
+    """Save model config without downloading.
+
+    Args:
+        model_id: Model ID to save.
+
+    Returns:
+        Config instance with selected model.
+    """
+    print(f"Selected model: {model_id}")
+
+    # Create and save config (download will happen later)
+    config = Config(model=model_id)
+    config.save()
+    print(f"Configuration saved to {DEFAULT_CONFIG_PATH}")
+
+    return config
+
+
+def _download_and_save_model(model_id: str) -> Config:
+    """Download model and save config (for terminal mode).
+
+    Args:
+        model_id: Model ID to download.
+
+    Returns:
+        Config instance with selected model.
+    """
+    print(f"Selected model: {model_id}")
+
+    # Download the model
+    try:
+        download_model(model_id)
+    except KeyboardInterrupt:
+        print("\nDownload interrupted. Run voice-typer again to resume.")
+        sys.exit(0)
+
+    # Create and save config
+    config = Config(model=model_id)
+    config.save()
+    print(f"Configuration saved to {DEFAULT_CONFIG_PATH}")
+
+    return config
+
+
+def first_run_setup() -> Config:
+    """Run first-time setup: model selection and download.
+
+    Uses GUI dialog when not running in terminal, otherwise uses terminal input.
+
+    Returns:
+        Config instance with selected model.
+    """
+    if is_running_in_terminal():
+        return first_run_setup_terminal()
+    else:
+        return first_run_setup_gui()
+
+
 def main() -> NoReturn:
     """Main entry point."""
     args = parse_args()
 
-    # Load config and apply CLI overrides
-    config = Config.load().override(
+    # Check for first run (no config file exists)
+    if not DEFAULT_CONFIG_PATH.exists():
+        config = first_run_setup()
+    else:
+        config = Config.load()
+
+    # Apply CLI overrides
+    config = config.override(
         hotkey=args.hotkey,
         model=args.model,
         language=args.language,
@@ -78,16 +220,34 @@ def main() -> NoReturn:
     if config.verbose:
         print(f"Configuration: {config}")
 
+    # Check permissions at startup (non-blocking)
+    permission_status = get_permission_status()
+    if not permission_status.all_granted:
+        print("Warning: Some permissions are missing. App will start but may not function fully.")
+        if not permission_status.accessibility:
+            print("  - Accessibility permission required for typing text")
+        if not permission_status.input_monitoring:
+            print("  - Input Monitoring permission required for hotkey detection")
+        if not permission_status.microphone:
+            print("  - Microphone permission required for audio recording")
+
+    # Get initial model status
+    models_status = get_all_models_status()
+
     # Initialize components
-    print(f"Loading model: {config.model}")
-    print("(First run will download the model, ~3GB)")
+    print(f"Using model: {config.model}")
     transcriber = Transcriber(model=config.model, language=config.language)
 
     recorder = AudioRecorder(sample_rate=config.sample_rate)
     status_bar: StatusBar | None = None
 
+    # Track pending model switch (when download completes)
+    pending_model_switch: str | None = None
+
     def cleanup() -> None:
         """Clean up resources."""
+        nonlocal downloader
+        downloader.cancel()
         listener.stop()
         recorder.close()
         if status_bar:
@@ -98,6 +258,77 @@ def main() -> NoReturn:
         """Handle quit from status bar."""
         cleanup()
         sys.exit(0)
+
+    def switch_to_model(model_id: str) -> None:
+        """Switch to a model that is already downloaded."""
+        nonlocal config, transcriber
+
+        # Update config and save
+        config = config.override(model=model_id)
+        config.save()
+
+        # Create new transcriber with new model
+        transcriber = Transcriber(model=model_id, language=config.language)
+        print(f"Now using model: {model_id}")
+
+        # Update model status in menu to reflect current model
+        if status_bar:
+            status_bar.update_model_status(get_all_models_status())
+
+    def on_download_complete(model_id: str, success: bool) -> None:
+        """Handle download completion."""
+        nonlocal pending_model_switch, models_status
+
+        if success:
+            print(f"Model {model_id} downloaded successfully")
+
+            # Update model status
+            models_status = get_all_models_status()
+            if status_bar:
+                status_bar.update_model_status(models_status)
+
+            # If this was the pending model switch, do it now
+            if pending_model_switch == model_id:
+                pending_model_switch = None
+                switch_to_model(model_id)
+        else:
+            print(f"Failed to download model {model_id}")
+            # Update status to show error
+            models_status = get_all_models_status()
+            if status_bar:
+                status_bar.update_model_status(models_status)
+
+        pending_model_switch = None
+
+    def on_download_progress(model_id: str, progress: float) -> None:
+        """Handle download progress updates."""
+        if status_bar:
+            status_bar.update_download_progress(model_id, progress)
+
+    # Create background downloader
+    downloader = BackgroundDownloader(
+        on_progress=on_download_progress,
+        on_complete=on_download_complete,
+    )
+
+    def on_model_select(model_id: str) -> None:
+        """Handle model selection from status bar menu."""
+        nonlocal pending_model_switch
+
+        if model_id == config.model:
+            return  # Same model, nothing to do
+
+        print(f"Switching to model: {model_id}")
+
+        # Check if model is already downloaded
+        if is_model_downloaded(model_id):
+            # Model ready - switch immediately
+            switch_to_model(model_id)
+        else:
+            # Need to download first - start background download
+            print("Model not downloaded. Starting download...")
+            pending_model_switch = model_id
+            downloader.download(model_id)
 
     # Recording state
     is_recording = False
@@ -191,8 +422,24 @@ def main() -> NoReturn:
 
     # Start status bar if enabled (must run on main thread for macOS)
     if not args.no_statusbar:
-        status_bar = StatusBar(on_quit=on_quit)
+        status_bar = StatusBar(
+            on_quit=on_quit,
+            on_model_select=on_model_select,
+            current_model=config.model,
+            permission_status=permission_status,
+            models_status=models_status,
+            on_open_accessibility=open_accessibility_settings,
+            on_open_input_monitoring=open_input_monitoring_settings,
+            on_open_microphone=open_microphone_settings,
+        )
         status_bar.start()
+
+        # Auto-download selected model if not already downloaded
+        if not is_model_downloaded(config.model):
+            print(f"Model {config.model} not downloaded. Starting background download...")
+            pending_model_switch = config.model
+            downloader.download(config.model)
+
         # This blocks until the app quits
         status_bar.run()
     else:
@@ -208,4 +455,8 @@ def main() -> NoReturn:
 
 
 if __name__ == "__main__":
+    # Required for PyInstaller multiprocessing support on macOS
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     main()

@@ -14,7 +14,18 @@ else:
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "voice-typer" / "config.toml"
 DEFAULT_HOTKEY = "alt_r"
-DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
+DEFAULT_MODEL = "mlx-community/whisper-turbo"
+
+# Cache directory for downloaded models
+MODEL_CACHE_DIR = Path.home() / "Library" / "Caches" / "voice-typer" / "models"
+
+# Available models for first-run selection
+AVAILABLE_MODELS = [
+    ("mlx-community/whisper-tiny", "Whisper Tiny - Fastest, lower accuracy (~75MB)"),
+    ("mlx-community/whisper-turbo", "Whisper Turbo - Fast, good quality (~1.5GB)"),
+    ("mlx-community/whisper-large-v3-turbo", "Whisper Large v3 Turbo - Best balance (~3GB)"),
+    ("mlx-community/whisper-large-v3", "Whisper Large v3 - Highest accuracy (~3GB)"),
+]
 
 
 @dataclass
@@ -25,7 +36,6 @@ class Config:
     model: str = DEFAULT_MODEL
     language: str | None = None
     verbose: bool = False
-
     # Internal settings
     sample_rate: int = field(default=16000, repr=False)
     type_delay: float = field(default=0.01, repr=False)
@@ -85,3 +95,29 @@ class Config:
             sample_rate=self.sample_rate,
             type_delay=self.type_delay,
         )
+
+    def save(self, path: Path | None = None) -> None:
+        """Save configuration to a TOML file.
+
+        Args:
+            path: Path to config file. If None, uses default location.
+        """
+        config_path = path or DEFAULT_CONFIG_PATH
+
+        # Create parent directory if it doesn't exist
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Build TOML content
+        lines = [
+            f'model = "{self.model}"',
+            f'hotkey = "{self.hotkey}"',
+        ]
+        if self.language:
+            lines.append(f'language = "{self.language}"')
+        if self.verbose:
+            lines.append("verbose = true")
+
+        content = "\n".join(lines) + "\n"
+
+        with open(config_path, "w") as f:
+            f.write(content)
