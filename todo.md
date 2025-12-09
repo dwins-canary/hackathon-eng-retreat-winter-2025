@@ -17,3 +17,10 @@ It's not checkiing and updating permissions status automatically. Even after pro
 First time steup dialog:
 1. After selecting the modela nd pressing download, it's getting stuck there. We should probably download it in the background.
 
+
+
+I want to make a change to the app. 
+We are currently showing status of the model as downloading.
+The feature i want to build is to show percentage of the model being downloaded. 
+Can you do this ? 
+

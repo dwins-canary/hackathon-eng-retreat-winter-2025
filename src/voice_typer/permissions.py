@@ -12,11 +12,12 @@ class PermissionStatus:
 
     accessibility: bool
     input_monitoring: bool
+    microphone: bool = True  # Default to True for backwards compatibility
 
     @property
     def all_granted(self) -> bool:
         """Return True if all permissions are granted."""
-        return self.accessibility and self.input_monitoring
+        return self.accessibility and self.input_monitoring and self.microphone
 
 
 def check_accessibility_permission() -> bool:
@@ -94,6 +95,52 @@ def check_input_monitoring_permission() -> bool:
         return True
 
 
+def check_microphone_permission() -> bool:
+    """Check if Microphone permission is granted.
+
+    Uses AVFoundation to check authorization status for audio capture.
+
+    Returns:
+        True if Microphone permission is granted.
+    """
+    try:
+        import AVFoundation
+
+        # AVAuthorizationStatus values:
+        # 0 = notDetermined - User hasn't been asked yet
+        # 1 = restricted - Parental controls or MDM restriction
+        # 2 = denied - User explicitly denied
+        # 3 = authorized - Permission granted
+        status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+            AVFoundation.AVMediaTypeAudio
+        )
+        return status == 3  # AVAuthorizationStatusAuthorized
+    except ImportError:
+        # AVFoundation not available - try alternate method
+        pass
+    except Exception:
+        pass
+
+    # Fallback: Try using CoreAudio to detect permission
+    try:
+        import objc
+        from Foundation import NSBundle
+
+        # Load AVFoundation framework dynamically
+        bundle = NSBundle.bundleWithPath_("/System/Library/Frameworks/AVFoundation.framework")
+        if bundle and bundle.load():
+            AVCaptureDevice = objc.lookUpClass("AVCaptureDevice")
+            # AVMediaTypeAudio constant
+            AVMediaTypeAudio = "soun"
+            status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeAudio)
+            return status == 3
+    except Exception:
+        pass
+
+    # Last resort fallback: assume granted if we can't check
+    return True
+
+
 def get_permission_status() -> PermissionStatus:
     """Get the current status of all required permissions.
 
@@ -103,6 +150,7 @@ def get_permission_status() -> PermissionStatus:
     return PermissionStatus(
         accessibility=check_accessibility_permission(),
         input_monitoring=check_input_monitoring_permission(),
+        microphone=check_microphone_permission(),
     )
 
 
@@ -122,6 +170,14 @@ def open_input_monitoring_settings() -> None:
     )
 
 
+def open_microphone_settings() -> None:
+    """Open System Settings to the Microphone privacy pane."""
+    subprocess.run(
+        ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"],
+        check=False,
+    )
+
+
 def get_permission_instructions() -> str:
     """Get instructions for granting permissions.
 
@@ -136,6 +192,10 @@ def get_permission_instructions() -> str:
 
 2. **Input Monitoring** - Required for hotkey detection
    Go to: System Settings > Privacy & Security > Input Monitoring
+   Add and enable Voice Typer (or your terminal app)
+
+3. **Microphone** - Required for audio recording
+   Go to: System Settings > Privacy & Security > Microphone
    Add and enable Voice Typer (or your terminal app)
 
 After granting permissions, you may need to restart the app."""

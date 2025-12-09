@@ -20,6 +20,7 @@ from voice_typer.permissions import (
     get_permission_status,
     open_accessibility_settings,
     open_input_monitoring_settings,
+    open_microphone_settings,
 )
 from voice_typer.statusbar import StatusBar, show_model_selection_dialog
 from voice_typer.transcribe import Transcriber, download_model
@@ -227,6 +228,8 @@ def main() -> NoReturn:
             print("  - Accessibility permission required for typing text")
         if not permission_status.input_monitoring:
             print("  - Input Monitoring permission required for hotkey detection")
+        if not permission_status.microphone:
+            print("  - Microphone permission required for audio recording")
 
     # Get initial model status
     models_status = get_all_models_status()
@@ -427,6 +430,7 @@ def main() -> NoReturn:
             models_status=models_status,
             on_open_accessibility=open_accessibility_settings,
             on_open_input_monitoring=open_input_monitoring_settings,
+            on_open_microphone=open_microphone_settings,
         )
         status_bar.start()
 

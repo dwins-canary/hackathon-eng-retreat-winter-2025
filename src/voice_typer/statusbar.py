@@ -81,10 +81,10 @@ class AppState(Enum):
 
 # Unicode icons for each state
 STATE_ICONS: dict[AppState, str] = {
-    AppState.IDLE: "\U0001F3A4",  # Microphone emoji
-    AppState.RECORDING: "\U0001F534",  # Red circle
-    AppState.TRANSCRIBING: "\u231B",  # Hourglass
-    AppState.DOWNLOADING: "\u2B07",  # Down arrow
+    AppState.IDLE: "\U0001f3a4",  # Microphone emoji
+    AppState.RECORDING: "\U0001f534",  # Red circle
+    AppState.TRANSCRIBING: "\u231b",  # Hourglass
+    AppState.DOWNLOADING: "\u2b07",  # Down arrow
 }
 
 STATE_LABELS: dict[AppState, str] = {
@@ -96,14 +96,14 @@ STATE_LABELS: dict[AppState, str] = {
 
 # Permission status icons
 PERMISSION_OK = "\u2705"  # Green checkmark
-PERMISSION_MISSING = "\u26A0\uFE0F"  # Warning sign
+PERMISSION_MISSING = "\u26a0\ufe0f"  # Warning sign
 
 # Menu bar icons for different states
-MENUBAR_ICON_READY = "\U0001F3A4"  # Microphone
-MENUBAR_ICON_WARNING = "\u26A0\uFE0F"  # Warning (permissions missing)
-MENUBAR_ICON_RECORDING = "\U0001F534"  # Red circle
-MENUBAR_ICON_TRANSCRIBING = "\u231B"  # Hourglass
-MENUBAR_ICON_DOWNLOADING = "\u2B07"  # Down arrow
+MENUBAR_ICON_READY = "\U0001f3a4"  # Microphone
+MENUBAR_ICON_WARNING = "\u26a0\ufe0f"  # Warning (permissions missing)
+MENUBAR_ICON_RECORDING = "\U0001f534"  # Red circle
+MENUBAR_ICON_TRANSCRIBING = "\u231b"  # Hourglass
+MENUBAR_ICON_DOWNLOADING = "\u2b07"  # Down arrow
 
 
 class StatusBarApp(rumps.App):
@@ -118,6 +118,7 @@ class StatusBarApp(rumps.App):
         models_status: list[ModelInfo] | None = None,
         on_open_accessibility: Callable[[], None] | None = None,
         on_open_input_monitoring: Callable[[], None] | None = None,
+        on_open_microphone: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the status bar app.
 
@@ -129,6 +130,7 @@ class StatusBarApp(rumps.App):
             models_status: List of model info with download states.
             on_open_accessibility: Callback to open Accessibility settings.
             on_open_input_monitoring: Callback to open Input Monitoring settings.
+            on_open_microphone: Callback to open Microphone settings.
         """
         # Determine initial icon based on permissions
         initial_icon = MENUBAR_ICON_READY
@@ -144,10 +146,11 @@ class StatusBarApp(rumps.App):
         self._on_quit = on_quit
         self._on_model_select = on_model_select
         self._current_model = current_model
-        self._permission_status = permission_status or PermissionStatus(True, True)
+        self._permission_status = permission_status or PermissionStatus(True, True, True)
         self._models_status = models_status or []
         self._on_open_accessibility = on_open_accessibility
         self._on_open_input_monitoring = on_open_input_monitoring
+        self._on_open_microphone = on_open_microphone
         self._is_downloading = False
 
         # Build menu
@@ -171,8 +174,14 @@ class StatusBarApp(rumps.App):
             self._permission_status.input_monitoring,
             self._handle_open_input_monitoring,
         )
+        self._microphone_item = self._create_permission_item(
+            "Microphone",
+            self._permission_status.microphone,
+            self._handle_open_microphone,
+        )
         self._permissions_menu.add(self._accessibility_item)
         self._permissions_menu.add(self._input_monitoring_item)
+        self._permissions_menu.add(self._microphone_item)
 
         # Add instructions item if any permission is missing
         if not self._permission_status.all_granted:
@@ -279,11 +288,11 @@ class StatusBarApp(rumps.App):
         elif model_info.state == ModelState.DOWNLOADING:
             if model_info.download_progress > 0:
                 progress_pct = int(model_info.download_progress * 100)
-                status = f"\u2B07 {progress_pct}%"  # Down arrow with percentage
+                status = f"\u2b07 {progress_pct}%"  # Down arrow with percentage
             else:
-                status = "\u2B07 Downloading..."  # Down arrow, indeterminate
+                status = "\u2b07 Downloading..."  # Down arrow, indeterminate
         elif model_info.state == ModelState.ERROR:
-            status = "\u274C"  # Red X
+            status = "\u274c"  # Red X
         else:
             status = "Not downloaded"
 
@@ -298,6 +307,11 @@ class StatusBarApp(rumps.App):
         """Handle click on Input Monitoring permission item."""
         if self._on_open_input_monitoring:
             self._on_open_input_monitoring()
+
+    def _handle_open_microphone(self, sender: Any) -> None:
+        """Handle click on Microphone permission item."""
+        if self._on_open_microphone:
+            self._on_open_microphone()
 
     def _show_permission_instructions(self, sender: Any) -> None:
         """Show dialog with permission instructions."""
@@ -369,6 +383,11 @@ class StatusBarApp(rumps.App):
         if status.input_monitoring:
             self._input_monitoring_item.set_callback(None)
 
+        mic_icon = PERMISSION_OK if status.microphone else PERMISSION_MISSING
+        self._microphone_item.title = f"Microphone: {mic_icon}"
+        if status.microphone:
+            self._microphone_item.set_callback(None)
+
         # Update menu bar icon
         self._update_title_icon()
 
@@ -437,6 +456,7 @@ class StatusBar:
         models_status: list[ModelInfo] | None = None,
         on_open_accessibility: Callable[[], None] | None = None,
         on_open_input_monitoring: Callable[[], None] | None = None,
+        on_open_microphone: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the status bar wrapper.
 
@@ -448,6 +468,7 @@ class StatusBar:
             models_status: List of model info with download states.
             on_open_accessibility: Callback to open Accessibility settings.
             on_open_input_monitoring: Callback to open Input Monitoring settings.
+            on_open_microphone: Callback to open Microphone settings.
         """
         self._app: StatusBarApp | None = None
         self._on_quit = on_quit
@@ -457,6 +478,7 @@ class StatusBar:
         self._models_status = models_status
         self._on_open_accessibility = on_open_accessibility
         self._on_open_input_monitoring = on_open_input_monitoring
+        self._on_open_microphone = on_open_microphone
 
     def start(self) -> None:
         """Initialize the status bar app (does not block).
@@ -474,6 +496,7 @@ class StatusBar:
             models_status=self._models_status,
             on_open_accessibility=self._on_open_accessibility,
             on_open_input_monitoring=self._on_open_input_monitoring,
+            on_open_microphone=self._on_open_microphone,
         )
 
     def run(self) -> None:
